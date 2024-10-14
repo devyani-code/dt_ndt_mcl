@@ -8,8 +8,8 @@ ParticleFilter2D::ParticleFilter2D() : Node("dt_ndt_mcl_node")
   m_pose_particle_pub = this->create_publisher<geometry_msgs::msg::PoseArray>("/particlecloudz", 1);
   m_best_pose_pub = this->create_publisher<geometry_msgs::msg::PoseStamped>("/best_pose", 1);
   m_map_sub = this->create_subscription<nav_msgs::msg::OccupancyGrid>("/map", qos, std::bind(&ParticleFilter2D::mapCallback, this, std::placeholders::_1));
-  m_init_pose_sub = this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>("/initialpose", durability_qos, std::bind(&ParticleFilter2D::initPoseCallback, this, std::placeholders::_1));
-  m_scan_sub = this->create_subscription<sensor_msgs::msg::LaserScan>("/scan", durability_qos, std::bind(&ParticleFilter2D::scanCallback, this, std::placeholders::_1));
+  m_init_pose_sub = this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>("/initial_pose", durability_qos, std::bind(&ParticleFilter2D::initPoseCallback, this, std::placeholders::_1));
+  m_scan_sub = this->create_subscription<sensor_msgs::msg::LaserScan>("/bcr_bot/scan", durability_qos, std::bind(&ParticleFilter2D::scanCallback, this, std::placeholders::_1));
 
   m_tf_buffer =
       std::make_unique<tf2_ros::Buffer>(this->get_clock());
@@ -51,6 +51,10 @@ void ParticleFilter2D::mapCallback(
 
 void ParticleFilter2D::initPoseCallback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg)
 {
+  if (m_received_init_pose) {
+        RCLCPP_WARN(this->get_logger(), "Initial pose already set, ignoring new initial pose.");
+        return;
+    }
 
   std::cout << "received initial pose!\n";
   m_pf->init(msg->pose.pose.position.x, msg->pose.pose.position.y,
@@ -67,8 +71,10 @@ void ParticleFilter2D::initPoseCallback(const geometry_msgs::msg::PoseWithCovari
   std::string odomFrame = "odom";
   std::string baseFrame = "base_footprint";
 
+
   try
   {
+
     tf_odom_pose =
         m_tf_buffer->lookupTransform(odomFrame, baseFrame, tf2::TimePointZero);
   }
@@ -94,6 +100,7 @@ void ParticleFilter2D::scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr
     RCLCPP_ERROR(this->get_logger(), "No map received yet, ignoring scan");
     return;
   }
+
   if (m_received_init_pose == false)
   {
     RCLCPP_ERROR(this->get_logger(), "No initial pose received yet, ignoring scan");
@@ -103,6 +110,7 @@ void ParticleFilter2D::scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr
   geometry_msgs::msg::TransformStamped tf_odom_pose;
   try
   {
+    
     tf_odom_pose =
         m_tf_buffer->lookupTransform("odom", "base_footprint", tf2::TimePointZero);
   }
@@ -132,8 +140,12 @@ void ParticleFilter2D::scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr
   double heading = angles::shortest_angular_distance(m_prev_odom_pose.theta,
                                                      m_prev_robot_pose.theta);
 
+  
+
   // Now apply odometry delta, corrected by heading, to get initial corrected
   // pose
+
+  std::cout<<"m_prev_robot_pose: "<<m_prev_robot_pose.x<<" "<<m_prev_robot_pose.y<<" "<<m_prev_robot_pose.theta<<std::endl;
   robot_pose.x =
       m_prev_robot_pose.x + (dx * cos(heading)) - (dy * sin(heading));
   robot_pose.y =
@@ -142,10 +154,12 @@ void ParticleFilter2D::scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr
 
   // Add in laserscan points
   ndt_2d::ScanPtr scan = std::make_shared<ndt_2d::Scan>(m_scan_id);
-  m_scan_id++;
+    m_scan_id++;
   scan->setPose(robot_pose);
   std::vector<ndt_2d::Point> points;
   points.reserve(msg->ranges.size());
+
+  std::cout<<"robot_pose: "<<robot_pose.x<<" "<<robot_pose.y<<" "<<robot_pose.theta<<std::endl;
 
   for (int i = 0; i < (int)msg->ranges.size(); i++)
   {
@@ -159,7 +173,7 @@ void ParticleFilter2D::scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr
     geometry_msgs::msg::PointStamped point_in;
     geometry_msgs::msg::PointStamped point_out;
     // TODO: change this to be a reconfigurable parameter
-    point_in.header.frame_id = "base_laser";
+    point_in.header.frame_id = "two_d_lidar";
     point_in.point.x = xx;
     point_in.point.y = yy;
     try
@@ -167,6 +181,7 @@ void ParticleFilter2D::scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr
       // TODO: also change this to be a reconfigurable parameter
       point_out = m_tf_buffer->transform(point_in, "base_footprint");
     }
+
     catch (tf2::TransformException &ex)
     {
       RCLCPP_INFO(
@@ -195,6 +210,7 @@ void ParticleFilter2D::scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr
 
   // ROS_INFO("Updating filter with control %f %f %f", robot_delta(0),
   //          robot_delta(1), robot_delta(2));
+
 
   m_pf->update(robot_delta(0), robot_delta(1), robot_delta(2));
   m_pf->measure(m_scan_matcher_ptr, scan);

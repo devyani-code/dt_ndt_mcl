@@ -36,7 +36,7 @@ namespace ndt_2d
                                   rclcpp::Node *node, double range_max)
   {
     // TODO: change this to reconfigurable parameters from nodehandle
-    resolution_ = 0.4;
+    resolution_ = 0.25;
     angular_res_ = 0.025;
     angular_size_ = 0.1;
     linear_res_ = 0.005;
@@ -56,7 +56,7 @@ namespace ndt_2d
                                  map.info.origin.position.x,
                                  map.info.origin.position.y);
 
-    for (int i = 0; i < map.data.size(); i++)
+    for (auto i = 0u; i < map.data.size(); i++)
     {
       if (map.data[i] > 0)
       {
