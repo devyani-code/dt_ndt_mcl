@@ -37,41 +37,63 @@ namespace ndt_2d {
 #define angle_norm angles::normalize_angle
 
 MotionModel::MotionModel(double a1, double a2, double a3, double a4, double a5)
-    : a1_(a1), a2_(a2), a3_(a3), a4_(a4), a5_(a5), gen_(random_()) {}
+    : a1_(a1), a2_(a2), a3_(a3), a4_(a4), a5_(a5), gen_(random_()),
+    imu_orientation_({0.0,0.0,0.0,1.0}),
+    imu_angular_velocity_(Eigen::Vector3d::Zero()),
+    imu_linear_acceleration_(Eigen::Vector3d::Zero())
+    {}
+
+
+void MotionModel::addIMU(const geometry_msgs::msg::Quaternion& orientation,
+                         const geometry_msgs::msg::Vector3& linear_acceleration,
+                         const geometry_msgs::msg::Vector3& angular_velocity) {
+  imu_orientation_(0)= orientation.x;
+  imu_orientation_(1)= orientation.y;
+  imu_orientation_(2)= orientation.z;
+  imu_orientation_(3)= orientation.w;
+  imu_angular_velocity_ = Eigen::Vector3d(angular_velocity.x, angular_velocity.y, angular_velocity.z);
+  imu_linear_acceleration_ = Eigen::Vector3d(linear_acceleration.x, linear_acceleration.y, linear_acceleration.z);
+}
+
 
 void MotionModel::sample(const double dx, const double dy, const double dth,
                          std::vector<Eigen::Vector3d>& poses) {
+    double dt = 1/30.0;
   // Decompose relative motion
-  double trans = std::hypot(dx, dy);
-  double rot1 = (trans > 0.01) ? atan2(dy, dx) : 0.0;
-  double rot2 = angle_diff(rot1, dth);
+    double trans = std::hypot(dx, dy);
+    double rot1 = (trans > 0.01) ? atan2(dy, dx) : 0.0;
+    double rot2 = angle_diff(rot1, dth);
 
-  // Reverse motion should not cause massive errors
-  double rot1_ = std::min(std::fabs(angle_diff(rot1, 0.0)),
-                          std::fabs(angle_diff(rot1, M_PI)));
-  double rot2_ = std::min(std::fabs(angle_diff(rot2, 0.0)),
-                          std::fabs(angle_diff(rot2, M_PI)));
+    // Calculate average rotational motion based on IMU angular velocity
+    double imu_rot1 = imu_angular_velocity_(2) * dt;  // Assuming dt is the time step (you need to define it)
+    double imu_rot2 = imu_angular_velocity_(2) * dt;  // Similar assumption for the second rotation
 
-  // Determine standard deviation
-  double sigma_rot1 = std::sqrt(a1_ * rot1_ * rot1_ + a2_ * trans * trans);
-  double sigma_trans = std::sqrt(a3_ * trans * trans + a4_ * rot1_ * rot1_ +
-                                 a4_ * rot2_ * rot2_);
-  double sigma_rot2 = std::sqrt(a1_ * rot2_ * rot2_ + a2_ * trans * trans);
+    // Reverse motion should not cause massive errors
+    double rot1_ = std::min(std::fabs(angle_diff(rot1, 0.0)),
+                             std::fabs(angle_diff(rot1, M_PI)));
+    double rot2_ = std::min(std::fabs(angle_diff(rot2, 0.0)),
+                             std::fabs(angle_diff(rot2, M_PI)));
 
-  // Create distributions
-  std::normal_distribution<float> sample_rot1(rot1, sigma_rot1);
-  std::normal_distribution<float> sample_trans(trans, sigma_trans);
-  std::normal_distribution<float> sample_rot2(rot2, sigma_rot2);
+    // Determine standard deviation
+    double sigma_rot1 = std::sqrt(a1_ * rot1_ * rot1_ + a2_ * trans * trans);
+    double sigma_trans = std::sqrt(a3_ * trans * trans + a4_ * rot1_ * rot1_ +
+                                    a4_ * rot2_ * rot2_);
+    double sigma_rot2 = std::sqrt(a1_ * rot2_ * rot2_ + a2_ * trans * trans);
 
-  for (auto& pose : poses) {
-    float r1 = sample_rot1(gen_);
-    float t = sample_trans(gen_);
-    float r2 = sample_rot2(gen_);
+    // Create distributions
+    std::normal_distribution<float> sample_rot1(rot1 + imu_rot1, sigma_rot1);
+    std::normal_distribution<float> sample_trans(trans, sigma_trans);
+    std::normal_distribution<float> sample_rot2(rot2 + imu_rot2, sigma_rot2);
 
-    pose(0) += t * cos(pose(2) + r1);
-    pose(1) += t * sin(pose(2) + r1);
-    pose(2) = angle_norm(pose(2) + r1 + r2);
-  }
+    for (auto& pose : poses) {
+        float r1 = sample_rot1(gen_);
+        float t = sample_trans(gen_);
+        float r2 = sample_rot2(gen_);
+
+        pose(0) += t * cos(pose(2) + r1);
+        pose(1) += t * sin(pose(2) + r1);
+        pose(2) = angle_norm(pose(2) + r1 + r2);
+    }
 }
 
 }  // namespace ndt_2d

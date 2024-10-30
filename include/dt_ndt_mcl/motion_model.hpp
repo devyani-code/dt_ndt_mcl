@@ -34,6 +34,9 @@
 #include <memory>
 #include <random>
 #include <vector>
+#include <geometry_msgs/msg/quaternion.hpp>
+#include <geometry_msgs/msg/vector3.hpp>
+
 
 namespace ndt_2d {
 
@@ -52,14 +55,24 @@ class MotionModel {
    * @param dth Change in orientation, in robot centric frame.
    * @param poses The poses to update.
    */
+  void addIMU(const geometry_msgs::msg::Quaternion& orientation,
+               const geometry_msgs::msg::Vector3& linear_acceleration,
+               const geometry_msgs::msg::Vector3& angular_velocity);
   void sample(const double dx, const double dy, const double dth,
               std::vector<Eigen::Vector3d>& poses);
 
  private:
   double a1_, a2_, a3_, a4_, a5_;
+  
+
+
+
 
   std::random_device random_;
   std::mt19937 gen_;
+  Eigen::Vector4d imu_orientation_;
+  Eigen::Vector3d imu_angular_velocity_;
+  Eigen::Vector3d imu_linear_acceleration_;
 };
 
 using MotionModelPtr = std::shared_ptr<MotionModel>;

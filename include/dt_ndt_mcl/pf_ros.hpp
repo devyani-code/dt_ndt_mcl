@@ -14,7 +14,7 @@
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
-
+#include <sensor_msgs/msg/imu.hpp>
 #include <dt_ndt_mcl/conversions.hpp>
 #include <dt_ndt_mcl/motion_model.hpp>
 #include <dt_ndt_mcl/particle_filter.hpp>
@@ -25,6 +25,8 @@ class ParticleFilter2D : public rclcpp::Node
 {
 public:
   ParticleFilter2D();
+
+  void imuCallback(const sensor_msgs::msg::Imu::SharedPtr msg);
 
   void mapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
 
@@ -46,10 +48,11 @@ private:
   std::unique_ptr<tf2_ros::Buffer> m_tf_buffer;
   std::shared_ptr<tf2_ros::TransformListener> m_tf_listener{nullptr};
 
+  rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr m_imu_sub;
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr m_map_sub;
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr m_init_pose_sub;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr m_scan_sub;
-  rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr m_best_pose_pub;
+  rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr m_best_pose_pub;
   rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr m_pose_particle_pub;
 
   bool m_received_map;

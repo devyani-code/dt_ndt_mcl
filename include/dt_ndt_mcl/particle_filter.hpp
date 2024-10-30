@@ -30,6 +30,7 @@
 #define NDT_2D__PARTICLE_FILTER_HPP_
 
 #include <Eigen/Core>
+
 #include <memory>
 #include <vector>
 #include <geometry_msgs/msg/pose_array.hpp>
@@ -75,6 +76,10 @@ namespace ndt_2d
      * @param matcher Scan localization method.
      * @param scan The current scan data.
      */
+    double computeESS();
+    double computeVar();
+    Particle generateRandomParticle(const double delta_x, const double delta_y, const double delta_theta);
+    void injectRandomParticles(std::vector<Particle> resampled, std::vector<double> resampled_weights);
     void measure(const ScanMatcherPtr &matcher, const ScanPtr &scan);
 
     /**
@@ -82,7 +87,7 @@ namespace ndt_2d
      * @param kld_err Maximum error between true distribution and estimated distribution.
      * @param kld_z Upper quantile of (1-p), p = probability that error is less than kld_err.
      */
-    void resample(const double kld_err, const double kld_z);
+    void resample(const double kld_err, const double kld_z,bool inject_particles);
 
     /** @brief Get the mean of the particle distribution. */
     Eigen::Vector3d getMean();
@@ -90,8 +95,12 @@ namespace ndt_2d
     /** @brief Get the covariance matrix for the particle distribution. */
     Eigen::Matrix3d getCovariance();
 
+    Eigen::Matrix<double, 6, 6> getPoseCovariance();
+
     /** @brief Get a visualization message of the particle poses. */
     void getMsg(geometry_msgs::msg::PoseArray &msg);
+
+    bool initiateResampling(double threshold, size_t ess_or_var);
 
   private:
     // Internal helper: normalize weights, compute mean and covariance
@@ -108,6 +117,7 @@ namespace ndt_2d
     std::vector<Particle> particles_;
     std::vector<double> weights_;
     Eigen::Vector3d mean_;
+    Eigen::Matrix<double, 6, 6> pose_cov;
     Eigen::Matrix3d cov_;
 
     // KD Tree for adaptive resampling
