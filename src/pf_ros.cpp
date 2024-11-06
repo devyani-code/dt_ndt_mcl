@@ -12,13 +12,19 @@ ParticleFilter2D::ParticleFilter2D() : Node("dt_ndt_mcl_node")
   m_map_sub = this->create_subscription<nav_msgs::msg::OccupancyGrid>("/map", qos, std::bind(&ParticleFilter2D::mapCallback, this, std::placeholders::_1));
   m_init_pose_sub = this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>("/initial_pose", durability_qos, std::bind(&ParticleFilter2D::initPoseCallback, this, std::placeholders::_1));
   m_scan_sub = this->create_subscription<sensor_msgs::msg::LaserScan>("/bcr_bot/scan", durability_qos, std::bind(&ParticleFilter2D::scanCallback, this, std::placeholders::_1));
-
+  m_odom_sub = this->create_subscription<nav_msgs::msg::Odometry>("/bcr_bot/odom", durability_qos, std::bind(&ParticleFilter2D::odomCallback, this, std::placeholders::_1));
   m_tf_buffer =
       std::make_unique<tf2_ros::Buffer>(this->get_clock());
   m_tf_listener =
       std::make_shared<tf2_ros::TransformListener>(*m_tf_buffer);
 
   // TODO: Add reconfigurable parameters
+
+  std::cout << "Creating scan matcher\n";
+
+  m_scan_registration_ptr = std::make_shared<ndt_2d::NDTRegistration>();
+
+  std::cout << "Ready scan matcher\n";
 
   m_scan_matcher_ptr = std::make_shared<ndt_2d::ScanMatcherNDT>();
   m_scan_matcher_ptr->initialize("ndt", this, 100.0);
@@ -36,8 +42,10 @@ ParticleFilter2D::ParticleFilter2D() : Node("dt_ndt_mcl_node")
   size_t max_particles = 1000;
   m_min_travel_distance = 0.1;
   m_min_travel_rotation = 0.5;
-
+  
   m_scan_id = 0;
+  mean = Eigen::Vector3d::Zero();
+
   m_pf = std::make_shared<ndt_2d::ParticleFilter>(min_particles, max_particles,
                                                   m_motion_model);
 }
@@ -50,11 +58,23 @@ void ParticleFilter2D::imuCallback(const sensor_msgs::msg::Imu::SharedPtr msg)
   m_motion_model->addIMU(orientation, linear_acceleration, angular_velocity);
 }
 
+void ParticleFilter2D::odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg)
+{
+  auto pose_x = msg->pose.pose.position.x;
+  auto pose_y = msg->pose.pose.position.y;
+  auto pose_yaw = tf2::getYaw(msg->pose.pose.orientation);
+
+
+}
+
 void ParticleFilter2D::mapCallback(
     const nav_msgs::msg::OccupancyGrid::SharedPtr msg)
 {
 
+  std::cout << "received map!\n";
   m_scan_matcher_ptr->addMap(*msg);
+  m_scan_registration_ptr->addMapPCD(*msg);
+  std::cout << "added map!\n";
   RCLCPP_INFO(this->get_logger(), "Map received");
   m_received_map = true;
 }
@@ -62,7 +82,6 @@ void ParticleFilter2D::mapCallback(
 void ParticleFilter2D::initPoseCallback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg)
 {
   if (m_received_init_pose) {
-        RCLCPP_WARN(this->get_logger(), "Initial pose already set, ignoring new initial pose.");
         return;
     }
 
@@ -147,14 +166,11 @@ void ParticleFilter2D::scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr
   }
 
   // Odometry frame is usually not aligned with map frame
-  double heading = angles::shortest_angular_distance(m_prev_odom_pose.theta,
-                                                     m_prev_robot_pose.theta);
-
-  
-
-  // Now apply odometry delta, corrected by heading, to get initial corrected
-  // pose
-
+  // Calculate heading in map frame if odom is not aligned with map
+  // double heading = angles::shortest_angular_distance(m_prev_odom_pose.theta,
+  //                                                    m_prev_robot_pose.theta);
+  double heading = 0.0;
+  // Now apply odometry delta, corrected by heading, to get initial corrected pose
   robot_pose.x =
       m_prev_robot_pose.x + (dx * cos(heading)) - (dy * sin(heading));
   robot_pose.y =
@@ -199,7 +215,7 @@ void ParticleFilter2D::scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr
     }
     try
     {
-      point_out_map = m_tf_buffer->transform(point_out, "map");
+      point_out_map = m_tf_buffer->transform(point_in, "map");
     }
     catch (tf2::TransformException &ex)
     {
@@ -211,6 +227,7 @@ void ParticleFilter2D::scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr
     ndt_2d::Point p(point_out.point.x, point_out.point.y);
     points.push_back(p);
   }
+  m_scan_registration_ptr->addScanPCD(lidar_pts_in_map_frame);
 
   scan->setPoints(points);
 
@@ -232,8 +249,21 @@ void ParticleFilter2D::scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr
   // ROS_INFO("Updating filter with control %f %f %f", robot_delta(0),
   //          robot_delta(1), robot_delta(2));
 
+  
+
 
   m_pf->update(robot_delta(0), robot_delta(1), robot_delta(2));
+
+  m_scan_registration_ptr->setInitialPose(Eigen::Vector3d(odom_pose.x, odom_pose.y, odom_pose.theta));
+
+  // if (abs(robot_delta(2)) > 0.025)
+  // {
+  //   RCLCPP_INFO(this->get_logger(), "Large rotation detected, performing scan match!");
+  auto corrected_pose_msg = m_scan_registration_ptr->matchScans();
+    // ndt_2d::Pose2d corrected_pose2d(corrected_pose(0), corrected_pose(1), corrected_pose(2));
+    // m_pf->setCorrectedPose(corrected_pose);
+    
+  // }
   m_pf->measure(m_scan_matcher_ptr, scan);
   auto resampling_bool = m_pf->initiateResampling(0.0000002,0);
   std::cout<<"resampling_bool: "<<resampling_bool<<std::endl;
@@ -243,10 +273,13 @@ void ParticleFilter2D::scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr
     m_pf->resample(m_kld_err, m_kld_z, false);
 
   }
-  auto mean = m_pf->getMean();
-  auto cov = m_pf->getPoseCovariance();
+  mean = m_pf->getMean();
+  // auto cov = m_pf->getPoseCovariance();
   ndt_2d::Pose2d mean_pose(mean(0), mean(1), mean(2));
   scan->setPose(mean_pose);
+  
+  
+
   geometry_msgs::msg::PoseArray pose_msg;
   pose_msg.header.frame_id = "map";
   m_pf->getMsg(pose_msg);
@@ -257,19 +290,19 @@ void ParticleFilter2D::scanCallback(const sensor_msgs::msg::LaserScan::SharedPtr
   m_prev_odom_pose = odom_pose;
 
   // publish best pose
-  geometry_msgs::msg::PoseWithCovarianceStamped best_pose_msg;
-  best_pose_msg.header.frame_id = "map";
-  best_pose_msg.pose.pose.position.x = mean(0);
-  best_pose_msg.pose.pose.position.y = mean(1);
-  best_pose_msg.pose.pose.orientation.z = std::sin(mean(2) / 2.0);
-  best_pose_msg.pose.pose.orientation.w = std::cos(mean(2) / 2.0);
-  for (int i = 0; i < 6; ++i) {
-    for (int j = 0; j < 6; ++j) {
-        best_pose_msg.pose.covariance[i * 6 + j] = cov(i, j);
-    }
-}
+//   geometry_msgs::msg::PoseWithCovarianceStamped best_pose_msg;
+//   best_pose_msg.header.frame_id = "map";
+//   best_pose_msg.pose.pose.position.x = corrected_pose(0);
+//   best_pose_msg.pose.pose.position.y = corrected_pose(1);
+//   best_pose_msg.pose.pose.orientation.z = std::sin(corrected_pose(2) / 2.0);
+//   best_pose_msg.pose.pose.orientation.w = std::cos(corrected_pose(2) / 2.0);
+//   for (int i = 0; i < 6; ++i) {
+//     for (int j = 0; j < 6; ++j) {
+//         best_pose_msg.pose.covariance[i * 6 + j] = cov(i, j);
+//     }
+// }
   
-  m_best_pose_pub->publish(best_pose_msg);
+  m_best_pose_pub->publish(corrected_pose_msg);
 
   double current_trace = computeTrace();
   if (current_trace < 0.02)

@@ -16,18 +16,27 @@
 #include <pcl/console/time.h> 
 #include <pcl/point_cloud.h>
 #include <geometry_msgs/msg/pose.hpp>
-
+#include <nav_msgs/msg/occupancy_grid.hpp>
+#include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 namespace ndt_2d
 {
   class NDTRegistration
   {
   public:
     NDTRegistration();
-    void addMapPCD(std::vector<Eigen::Vector3d> &points);
+    void setInitialPose(const Eigen::Vector3d &pose);
+    void addMapPCD(const nav_msgs::msg::OccupancyGrid &map);
     void addScanPCD(std::vector<Eigen::Vector3d> &points);
-    Eigen::Matrix4d matchScans( Eigen::Vector3d &pose);
+    Eigen::Matrix4f transform3D(double x, double y, double z, double yaw);
+    geometry_msgs::msg::PoseWithCovarianceStamped matchScans();
+    void convertEigenToPose(const Eigen::Matrix4f &transformation, geometry_msgs::msg::Pose &pose);
   private:
-  pcl::PointCloud<pcl::PointXYZ> scan_pts;
-  pcl::PointCloud<pcl::PointXYZ> map_pts;
+  pcl::PointCloud<pcl::PointXYZ>::Ptr map_pts;
+  pcl::PointCloud<pcl::PointXYZ>::Ptr scan_pts;
+  Eigen::Vector3d m_initial_pose;
   
-};
+  
+  };
+} // namespace ndt_2d
+#endif
+

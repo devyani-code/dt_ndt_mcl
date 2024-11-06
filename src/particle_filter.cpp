@@ -32,7 +32,6 @@
 #include <random>
 #include <omp.h>
 
-
 namespace ndt_2d {
 
 ParticleFilter::ParticleFilter(size_t min_particles, size_t max_particles,
@@ -44,7 +43,8 @@ ParticleFilter::ParticleFilter(size_t min_particles, size_t max_particles,
       mean_(Eigen::Vector3d::Zero()),
       pose_cov(Eigen::Matrix<double, 6, 6>::Zero()),
       cov_(Eigen::Matrix3d::Zero()),
-      kd_tree_(0.5, 0.5, 0.2671, max_particles) {
+      kd_tree_(0.5, 0.5, 0.2671, max_particles),
+      corrected_pose_(0.0) {
   particles_.reserve(max_particles_);
   weights_.reserve(max_particles_);
   particles_.assign(min_particles_, Particle(0.0, 0.0, 0.0));
@@ -68,7 +68,21 @@ void ParticleFilter::init(const double x, const double y, const double theta,
   weights_.assign(particles_.size(), 1.0 / particles_.size());
   updateStatistics();
 }
+void ParticleFilter::setCorrectedPose(Eigen::Vector3d &pose, double weight){
+    std::random_device rd;                             // Seed for randomness
+    std::mt19937 gen(rd());                            // Mersenne Twister engine
+    std::uniform_int_distribution<> distrib(0, min_particles_ - 1);
 
+    // Select a random index
+    int random_index = distrib(gen);
+
+    corrected_pose_ = random_index;
+
+
+    std::cout<<"random_index: "<<random_index<<std::endl;
+
+    particles_[random_index] = pose;
+}
 void ParticleFilter::update(const double dx, const double dy,
                             const double dth) {
   // Apply control update
@@ -184,6 +198,7 @@ void ParticleFilter::resample(const double kld_err, const double kld_z, bool inj
     }
     // injectRandomParticles();
   }
+
 
   if(inject_particles){
     injectRandomParticles(resampled, resampled_weights);

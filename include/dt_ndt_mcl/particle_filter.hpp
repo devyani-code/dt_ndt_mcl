@@ -69,6 +69,7 @@ namespace ndt_2d
      * @param dy Distance traveled in the Y direction, in robot centric frame.
      * @param dth Change in angular orientation, in robot centric frame.
      */
+    void setCorrectedPose(Eigen::Vector3d &pose, double weight);
     void update(const double dx, const double dy, const double dth);
 
     /**
@@ -119,9 +120,9 @@ namespace ndt_2d
     Eigen::Vector3d mean_;
     Eigen::Matrix<double, 6, 6> pose_cov;
     Eigen::Matrix3d cov_;
-
     // KD Tree for adaptive resampling
     KDTree<double> kd_tree_;
+    double corrected_pose_;
   };
 
 } // namespace ndt_2d

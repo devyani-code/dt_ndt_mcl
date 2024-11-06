@@ -19,7 +19,9 @@
 #include <dt_ndt_mcl/motion_model.hpp>
 #include <dt_ndt_mcl/particle_filter.hpp>
 #include <dt_ndt_mcl/scan_matcher_ndt.hpp>
+#include <dt_ndt_mcl/ndt_registration.hpp>
 #include <iostream>
+#include <nav_msgs/msg/odometry.hpp>
 
 class ParticleFilter2D : public rclcpp::Node
 {
@@ -27,6 +29,8 @@ public:
   ParticleFilter2D();
 
   void imuCallback(const sensor_msgs::msg::Imu::SharedPtr msg);
+
+  void odomCallback(const nav_msgs::msg::Odometry::SharedPtr msg);
 
   void mapCallback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg);
 
@@ -41,6 +45,7 @@ private:
   std::shared_ptr<ndt_2d::ScanMatcherNDT> m_scan_matcher_ptr;
   ndt_2d::MotionModelPtr m_motion_model;
   std::shared_ptr<ndt_2d::ParticleFilter> m_pf;
+  std::shared_ptr<ndt_2d::NDTRegistration> m_scan_registration_ptr;
 
   ndt_2d::Pose2d m_prev_odom_pose;
   ndt_2d::Pose2d m_prev_robot_pose;
@@ -52,6 +57,7 @@ private:
   rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr m_map_sub;
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr m_init_pose_sub;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr m_scan_sub;
+  rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr m_odom_sub;
   rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr m_best_pose_pub;
   rclcpp::Publisher<geometry_msgs::msg::PoseArray>::SharedPtr m_pose_particle_pub;
 
@@ -62,6 +68,7 @@ private:
   double m_kld_z;
   double m_min_travel_distance;
   double m_min_travel_rotation;
+  Eigen::Vector3d mean;
 };
 
 #endif // PF_ROS_HPP_
