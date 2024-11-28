@@ -70,7 +70,7 @@ namespace ndt_2d
   }
 
   
-  geometry_msgs::msg::PoseWithCovarianceStamped NDTRegistration::matchScans()
+  Eigen::Vector3d NDTRegistration::matchScans()
   {
     if (scan_pts->empty()) {
     std::cout << "Scan point cloud is empty!" << std::endl;
@@ -84,18 +84,20 @@ namespace ndt_2d
     ndt.setTransformationEpsilon(0.01);
     ndt.setStepSize(0.1);
     ndt.setResolution(1);
-    ndt.setMaximumIterations(100);
+    ndt.setMaximumIterations(150);
     ndt.setInputSource(scan_pts);
     
     pcl::PointCloud<pcl::PointXYZ>::Ptr output(new pcl::PointCloud<pcl::PointXYZ>);
     Eigen::Matrix4f init_guess = transform3D(m_initial_pose[0], m_initial_pose[1], 0.0, m_initial_pose[2]);
     ndt.align(*output, init_guess);
     Eigen::Matrix4f final_transformation = ndt.getFinalTransformation();
-    geometry_msgs::msg::PoseWithCovarianceStamped pose_msg;
-    // pose_msg.header.stamp = msg->header.stamp;
-    pose_msg.header.frame_id = "map";
-    convertEigenToPose(final_transformation, pose_msg.pose.pose);
-    return pose_msg;
+    // geometry_msgs::msg::PoseWithCovarianceStamped pose_msg;
+    // // pose_msg.header.stamp = msg->header.stamp;
+    // pose_msg.header.frame_id = "map";
+    // convertEigenToPose(final_transformation, pose_msg.pose.pose);
+    Eigen::Vector3d final_pose;
+    convertEigenToXYTheta(final_transformation, final_pose);
+    return final_pose;
   }
   void NDTRegistration::convertEigenToPose(const Eigen::Matrix4f &transformation, geometry_msgs::msg::Pose &pose){
         Eigen::Affine3d transform(transformation.cast<double>());
@@ -107,5 +109,11 @@ namespace ndt_2d
         pose.orientation.y = q.y();
         pose.orientation.z = q.z();
         pose.orientation.w = q.w();
+  }
+  void NDTRegistration::convertEigenToXYTheta(const Eigen::Matrix4f &transformation, Eigen::Vector3d &pose){
+    Eigen::Affine3d transform(transformation.cast<double>());
+    pose(0) = transform.translation().x();
+    pose(1) = transform.translation().y();
+    pose(2) = atan2(transform(1,0), transform(0,0));
   }
 };  // namespace ndt_2d

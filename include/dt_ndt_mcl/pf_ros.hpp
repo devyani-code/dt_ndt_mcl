@@ -22,6 +22,7 @@
 #include <dt_ndt_mcl/ndt_registration.hpp>
 #include <iostream>
 #include <nav_msgs/msg/odometry.hpp>
+#include <visualization_msgs/msg/marker_array.hpp>
 
 class ParticleFilter2D : public rclcpp::Node
 {
@@ -69,6 +70,12 @@ private:
   double m_min_travel_distance;
   double m_min_travel_rotation;
   Eigen::Vector3d mean;
+  Eigen::Vector3d lag_delta;
+  double pose_x;
+  double pose_y;
+  double pose_yaw;
+  Eigen::Vector3d smoothed_pose;
+  double total_distance;
 };
 
 #endif // PF_ROS_HPP_

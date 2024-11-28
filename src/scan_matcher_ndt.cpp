@@ -36,7 +36,7 @@ namespace ndt_2d
                                   rclcpp::Node *node, double range_max)
   {
     // TODO: change this to reconfigurable parameters from nodehandle
-    resolution_ = 0.25;
+    resolution_ = 0.2;
     angular_res_ = 0.025;
     angular_size_ = 0.1;
     linear_res_ = 0.005;
@@ -70,7 +70,7 @@ namespace ndt_2d
 
   void ScanMatcherNDT::updateLocalMap(const ScanPtr &scan)
   {
-    double max_range = 30.0;
+    double max_range = 40.0;
     Pose2d pose = scan->getPose();
     double min_x = pose.x - max_range;
     double max_x = pose.x + max_range;
@@ -213,7 +213,7 @@ namespace ndt_2d
       p = t * p;
       double static_map_likelihood = ndt_->likelihood(p);
       // TODO: add this as a reconfigurable parameter
-      if (m_local_map != nullptr && static_map_likelihood <= 0.4)
+      if (m_local_map != nullptr && static_map_likelihood <= 0.6)
       {
         double local_map_likelihood = m_local_map->likelihood(p);
         score += -local_map_likelihood;

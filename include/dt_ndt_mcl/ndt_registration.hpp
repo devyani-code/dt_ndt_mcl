@@ -28,8 +28,9 @@ namespace ndt_2d
     void addMapPCD(const nav_msgs::msg::OccupancyGrid &map);
     void addScanPCD(std::vector<Eigen::Vector3d> &points);
     Eigen::Matrix4f transform3D(double x, double y, double z, double yaw);
-    geometry_msgs::msg::PoseWithCovarianceStamped matchScans();
+    Eigen::Vector3d matchScans();
     void convertEigenToPose(const Eigen::Matrix4f &transformation, geometry_msgs::msg::Pose &pose);
+    void convertEigenToXYTheta(const Eigen::Matrix4f &transformation, Eigen::Vector3d &pose);
   private:
   pcl::PointCloud<pcl::PointXYZ>::Ptr map_pts;
   pcl::PointCloud<pcl::PointXYZ>::Ptr scan_pts;

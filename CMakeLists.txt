@@ -22,6 +22,7 @@ find_package(angles REQUIRED)
 find_package(OpenMP REQUIRED)
 find_package(nav2_msgs REQUIRED)
 find_package(PCL REQUIRED QUIET)  # Add PCL
+find_package(visualization_msgs REQUIRED)
 
 
 
@@ -29,7 +30,8 @@ find_package(PCL REQUIRED QUIET)  # Add PCL
 add_executable(dt_ndt_mcl_node src/pf_ros.cpp src/scan_matcher_ndt.cpp src/pf_ros_node.cpp src/particle_filter.cpp src/ndt_model.cpp src/motion_model.cpp src/scan.cpp src/ndt_registration.cpp)
 ament_target_dependencies(dt_ndt_mcl_node 
  PUBLIC
- sensor_msgs nav_msgs geometry_msgs tf2_geometry_msgs tf2_ros tf2 angles Eigen3 nav2_msgs PCL)
+ sensor_msgs nav_msgs geometry_msgs tf2_geometry_msgs tf2_ros tf2 angles Eigen3 nav2_msgs PCL visualization_msgs
+ )
 target_include_directories(dt_ndt_mcl_node
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

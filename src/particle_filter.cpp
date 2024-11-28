@@ -41,10 +41,8 @@ ParticleFilter::ParticleFilter(size_t min_particles, size_t max_particles,
       min_particles_(min_particles),
       max_particles_(max_particles),
       mean_(Eigen::Vector3d::Zero()),
-      pose_cov(Eigen::Matrix<double, 6, 6>::Zero()),
       cov_(Eigen::Matrix3d::Zero()),
-      kd_tree_(0.5, 0.5, 0.2671, max_particles),
-      corrected_pose_(0.0) {
+      kd_tree_(0.5, 0.5, 0.2671, max_particles) {
   particles_.reserve(max_particles_);
   weights_.reserve(max_particles_);
   particles_.assign(min_particles_, Particle(0.0, 0.0, 0.0));
@@ -68,21 +66,7 @@ void ParticleFilter::init(const double x, const double y, const double theta,
   weights_.assign(particles_.size(), 1.0 / particles_.size());
   updateStatistics();
 }
-void ParticleFilter::setCorrectedPose(Eigen::Vector3d &pose, double weight){
-    std::random_device rd;                             // Seed for randomness
-    std::mt19937 gen(rd());                            // Mersenne Twister engine
-    std::uniform_int_distribution<> distrib(0, min_particles_ - 1);
 
-    // Select a random index
-    int random_index = distrib(gen);
-
-    corrected_pose_ = random_index;
-
-
-    std::cout<<"random_index: "<<random_index<<std::endl;
-
-    particles_[random_index] = pose;
-}
 void ParticleFilter::update(const double dx, const double dy,
                             const double dth) {
   // Apply control update
@@ -90,66 +74,27 @@ void ParticleFilter::update(const double dx, const double dy,
   updateStatistics();
 }
 
-double ParticleFilter::computeESS() {
-  double ess = 0.0;
-  for (auto& w : weights_) {
-    ess += w * w;
-  }
-  return 1.0 / ess;
+void ParticleFilter::setCorrectedPose(const Eigen::Vector3d &pose, double weight) {
+
+
+
+  for(int i=0; i<5; i++){
+
+    int random_index = rand() % particles_.size();  // Assuming particles_ is your vector of particles
+    
+    // Step 2: Replace the selected particle's pose with the corrected pose
+    particles_[random_index] = pose;
+
+    weights_[random_index] = weight;
+
+    // Step 3: Update the weight of the selected particle (if necessary)
+   } // weights_[random_index] = weight;
 }
 
-double ParticleFilter::computeVar(){
-  double sum_weight = 0.0;
-  for (auto& w : weights_) {
-    sum_weight += w;
-  }
-  double mean_weight = sum_weight / weights_.size();
-  double var_weight = 0.0;
-  for (auto& w : weights_) {
-    var_weight += (w - mean_weight) * (w - mean_weight);
-  }
-  var_weight /= weights_.size();
-  return var_weight;
-
-}
-
-bool ParticleFilter::initiateResampling(double threshold, size_t ess_or_var){
-  if (ess_or_var == 0){
-    return computeESS() < particles_.size();
-  }
-  else{
-    return computeVar() > threshold;
-  }
-  
-}
-Eigen::Vector3d ParticleFilter::generateRandomParticle(double delta_x, double delta_y, double delta_theta){
-  std::uniform_real_distribution<double> uniform_dist_x_(mean_(0) - delta_x, mean_(0) + delta_x);
-  std::uniform_real_distribution<double>uniform_dist_y_(mean_(1) - delta_y, mean_(1) + delta_y);
-  std::uniform_real_distribution<double>uniform_dist_theta_(mean_(2) - delta_theta, mean_(2) + delta_theta);
-
-  Eigen::Vector3d p;
-  p(0) = uniform_dist_x_(gen_);
-  p(1) = uniform_dist_y_(gen_);
-  p(2) = uniform_dist_theta_(gen_);
-  return p;
-}
-void ParticleFilter::injectRandomParticles(std::vector<Particle> resampled, std::vector<double> resampled_weights){
-  std::cout<<"Injecting random particles"<<std::endl;
-  int num_particles = resampled.size();
-  int num_random_particles = static_cast<int>(num_particles * 0.1);
-  for(int i =0 ; i < num_random_particles; i++){
-    Eigen::Vector3d p;
-    p = generateRandomParticle(0.25, 0.25, 0.1);
-    resampled.push_back(p);
-    resampled_weights.push_back(1.0 / num_particles);
-
-  }
-  particles_ = resampled;
-  weights_ = resampled_weights;
-}
 void ParticleFilter::measure(const ScanMatcherPtr& matcher,
                              const ScanPtr& scan) {
   #pragma omp parallel for 
+
   for (size_t i = 0; i < particles_.size(); ++i) {
     // Pose of this particle in NDT format
     Pose2d pose(particles_[i](0), particles_[i](1), particles_[i](2));
@@ -159,7 +104,61 @@ void ParticleFilter::measure(const ScanMatcherPtr& matcher,
   updateStatistics();
 }
 
-void ParticleFilter::resample(const double kld_err, const double kld_z, bool inject_particles) {
+
+void ParticleFilter::SUS() {
+    std::vector<Particle> resampled_particles;
+    resampled_particles.reserve(max_particles_);
+    
+    std::vector<double> resampled_weights;
+    resampled_weights.reserve(max_particles_);
+
+    // Calculate cumulative weight sum
+    double weight_sum = std::accumulate(weights_.begin(), weights_.end(), 0.0);
+
+    // Calculate the interval
+    double step = weight_sum / max_particles_;
+    
+    // Generate a single random offset in [0, step]
+    std::uniform_real_distribution<double> distrib(0.0, step);
+    double start = distrib(gen_);
+
+    // Loop over particles using the SUS method
+    double cumulative_weight = weights_[0];
+    size_t index = 0;
+    for (size_t i = 0; i < max_particles_; ++i) {
+        double target = start + i * step;
+
+        // Move index forward until we find the correct particle
+        while (target > cumulative_weight) {
+            ++index;
+            cumulative_weight += weights_[index];
+        }
+
+        // Add selected particle to resampled list
+        resampled_particles.push_back(particles_[index]);
+        resampled_weights.push_back(weights_[index]);
+    }
+
+    double wt_sum = 0.0;
+    for(auto& w : resampled_weights) {
+        wt_sum += w;
+    }
+    double avg_wt = wt_sum / resampled_weights.size();
+    // for (size_t i=0; i<particles_.size(); ++i) {
+    //   if ( weights_[i] >= avg_wt) {
+    //       resampled_particles.push_back(particles_[i]);
+    //       resampled_weights.push_back(weights_[i]);
+    //   }
+    // }
+    // Replace particles and weights with resampled lists
+    particles_ = resampled_particles;
+    weights_ = resampled_weights;
+
+    // Update particle statistics (e.g., mean and covariance)
+    updateStatistics();
+}
+
+void ParticleFilter::resample(const double kld_err, const double kld_z) {
   // Sampling particles based on current weights
   std::discrete_distribution<size_t> d(weights_.begin(), weights_.end());
 
@@ -196,17 +195,10 @@ void ParticleFilter::resample(const double kld_err, const double kld_z, bool inj
     if (resampled.size() >= max_particles_) {
       break;
     }
-    // injectRandomParticles();
   }
 
-
-  if(inject_particles){
-    injectRandomParticles(resampled, resampled_weights);
-  }
-  else{
-    particles_ = resampled;
-    weights_ = resampled_weights;
-  }
+  particles_ = resampled;
+  weights_ = resampled_weights;
 
   updateStatistics();
 }
@@ -215,10 +207,9 @@ Eigen::Vector3d ParticleFilter::getMean() { return mean_; }
 
 Eigen::Matrix3d ParticleFilter::getCovariance() { return cov_; }
 
-Eigen::Matrix<double, 6, 6> ParticleFilter::getPoseCovariance() { return pose_cov; }
-
 void ParticleFilter::getMsg(geometry_msgs::msg::PoseArray & msg) {
   msg.poses.reserve(particles_.size());
+  
   for (auto& particle : particles_) {
     geometry_msgs::msg::Pose pose;
     pose.position.x = particle(0);
@@ -242,27 +233,30 @@ void ParticleFilter::updateStatistics() {
   // Temporary mean and correlation
   Eigen::Vector3d mean = Eigen::Vector3d::Zero();
   Eigen::Matrix3d corr = Eigen::Matrix3d::Zero();
-  Eigen::Matrix<double, 6,6> pose_covariance;
-  pose_covariance.setZero();
-  // Use circular mean for theta
-  double sum_cos_th = 0.0, sum_sin_th = 0.0;
 
-  for (size_t i = 0; i < particles_.size(); ++i) {
-    mean += weights_[i] * particles_[i];
-    sum_cos_th += weights_[i] * cos(particles_[i](2));
-    sum_sin_th += weights_[i] * sin(particles_[i](2));
+  // double sum_cos_th = 0.0, sum_sin_th = 0.0;
 
-    for (size_t j = 0; j < 2; ++j) {
-      for (size_t k = j; k < 2; ++k) {
-        corr(j, k) += weights_[i] * particles_[i](j) * particles_[i](k);
-      }
-    }
-  }
+  // for (size_t i = 0; i < particles_.size(); ++i) {
+  //   mean += weights_[i] * particles_[i];
+  //   sum_cos_th += weights_[i] * cos(particles_[i](2));
+  //   sum_sin_th += weights_[i] * sin(particles_[i](2));
+
+  //   for (size_t j = 0; j < 2; ++j) {
+  //     for (size_t k = j; k < 2; ++k) {
+  //       corr(j, k) += weights_[i] * particles_[i](j) * particles_[i](k);
+  //     }
+  //   }
+  // }
+  
+  auto max_it = std::max_element(weights_.begin(), weights_.end());
+
+  Particle max_particle = particles_[*max_it];
+
 
   // Mean is already normalized, since weights were normalized
-  mean_(0) = mean(0);
-  mean_(1) = mean(1);
-  mean_(2) = atan2(sum_sin_th, sum_cos_th);
+  mean_(0) = max_particle(0);
+  mean_(1) = max_particle(1);
+  mean_(2) = max_particle(2);
 
   // Compute covariance for x/y
   for (size_t j = 0; j < 2; ++j) {
@@ -278,27 +272,6 @@ void ParticleFilter::updateStatistics() {
     double d = angles::shortest_angular_distance(particles_[i](2), mean_(2));
     cov_(2, 2) += weights_[i] * d * d;
   }
-
-for (size_t i = 0; i < particles_.size(); ++i) {
-  double dx = particles_[i](0)  - mean(0);
-  double dy = particles_[i](1) - mean(1);
-  pose_covariance(0, 0) += weights_[i] * dx * dx;
-  pose_covariance(1, 1) += weights_[i] * dy * dy;
-  pose_covariance(0, 1) += weights_[i] * dx * dy;
-  pose_covariance(1, 0) = pose_covariance(0, 1);  // Symmetric covariance matrix
-
-  // Theta differences
-  double dtheta = angles::shortest_angular_distance(particles_[i](2) , mean(2));
-  pose_covariance(2, 2) += weights_[i] * dtheta * dtheta;
-
-  // Cross-covariance terms for theta (x-theta, y-theta)
-  pose_covariance(0, 2) += weights_[i] * dx * dtheta;
-  pose_covariance(1, 2) += weights_[i] * dy * dtheta;
-  pose_covariance(2, 0) = pose_covariance(0, 2);  // Symmetric
-  pose_covariance(2, 1) = pose_covariance(1, 2);  // Symmetric
-}
-
-pose_cov = pose_covariance;
 }
 
 }  // namespace ndt_2d
